@@ -1,6 +1,11 @@
 FROM ghost:latest
 
-RUN apk add --no-cache aws-cli gnupg
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        awscli \
+        gnupg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY ./run.sh /usr/local/bin/run.sh
 RUN chmod +x /usr/local/bin/run.sh
