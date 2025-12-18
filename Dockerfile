@@ -1,4 +1,4 @@
-FROM ghost:5.33.5-alpine
+FROM ghost:latest
 
 RUN apk add --no-cache aws-cli gnupg
 

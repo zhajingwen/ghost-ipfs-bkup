@@ -1,6 +1,6 @@
 # ghost-ipfs-bkup
 
-基于 Ghost 5.33.5-alpine 的 Docker 镜像，提供自动备份和恢复功能，使用 S3 兼容存储（如 Filebase）进行数据持久化。
+基于 Ghost latest 的 Docker 镜像，提供自动备份和恢复功能，使用 S3 兼容存储（如 Filebase）进行数据持久化。
 
 ## 📋 项目简介
 
@@ -13,7 +13,7 @@
 
 ## ✨ 功能特性
 
-- ✅ 基于 Ghost 5.33.5-alpine 官方镜像
+- ✅ 基于 Ghost latest 官方镜像
 - ✅ SQLite3 数据库支持
 - ✅ 自动定时备份（每 15 分钟）
 - ✅ GPG 加密数据库备份
@@ -24,7 +24,7 @@
 ## 🏗️ 技术架构
 
 ### 基础镜像
-- **Ghost**: `5.33.5-alpine`
+- **Ghost**: `latest`
 - **数据库**: SQLite3 (`content/data/ghost.db`)
 
 ### 核心组件
@@ -288,7 +288,7 @@ ghost-ipfs-bkup/
 
 ### v0.0.1
 - 初始版本
-- 基于 Ghost 5.33.5-alpine
+- 基于 Ghost latest
 - 实现自动备份和恢复功能
 - 支持 S3 兼容存储
 
