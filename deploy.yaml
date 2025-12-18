@@ -1,0 +1,48 @@
+---
+version: "2.0"
+
+services:
+  ghost:
+    image: ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+    expose:
+      - port: 2368
+        as: 80
+        to:
+          - global: true
+        accept:
+          - changeme.com
+    env:
+      - url=http://changeme.com
+      - NODE_ENV=production
+      - FILEBASE_BUCKET=test-bucket-name
+      - FILEBASE_ENDPOINT=https://s3.filebase.com
+      - FILEBASE_ACCESS_KEY_ID=your-filebase-access-key-id
+      - FILEBASE_SECRET_ACCESS_KEY=your-filebase-secret-access-key
+      - BACKUP_ENCRYPTION_PASSWORD=backup-password-for-database
+      # Optional: Specify backup directory path in bucket (e.g., "my-backup" or "project1/backup")
+      # If not set, backups will be stored at bucket root: s3://bucket/images and s3://bucket/data
+      # If set to "my-backup", backups will be at: s3://bucket/my-backup/images and s3://bucket/my-backup/data
+      - FILEBASE_BACKUP_PATH=my-backup
+
+profiles:
+  compute:
+    ghost:
+      resources:
+        cpu:
+          units: 1.0
+        memory:
+          size: 1Gi
+        storage:
+          size: 5Gi
+  placement:
+    akash:
+      pricing:
+        ghost:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  ghost:
+    akash:
+      profile: ghost
+      count: 1
