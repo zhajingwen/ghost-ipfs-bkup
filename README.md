@@ -65,6 +65,44 @@
 | `FILEBASE_BACKUP_PATH` | 备份目录路径前缀 | 空（备份到存储桶根目录） |
 | `NODE_ENV` | Node.js 运行环境 | `production` |
 
+#### 邮件配置环境变量
+
+Ghost 支持通过环境变量配置邮件服务。**注意**：Ghost 使用双下划线（`__`）作为环境变量分隔符来表示嵌套配置。
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `mail__transport` | 邮件传输方式 | `SMTP`（推荐）或 `Direct` |
+| `mail__options__host` | SMTP 服务器地址 | `smtp.gmail.com` |
+| `mail__options__port` | SMTP 端口 | `587`（TLS）或 `465`（SSL） |
+| `mail__options__auth__user` | SMTP 认证用户名 | `your-email@gmail.com` |
+| `mail__options__auth__pass` | SMTP 认证密码 | `your-app-password` |
+| `mail__from` | 发件人邮箱地址 | `noreply@yourdomain.com` |
+
+**常见邮件服务商配置示例：**
+
+| 服务商 | `mail__options__host` | `mail__options__port` | `mail__options__auth__user` | `mail__options__auth__pass` | 说明 |
+|--------|----------------------|---------------------|---------------------------|---------------------------|------|
+| **Resend**（推荐） | `smtp.resend.com` | `587` | `resend` | Resend API Key | 现代化邮件服务，配置简单，免费额度充足 |
+| Gmail | `smtp.gmail.com` | `587` | 你的 Gmail 地址 | 应用专用密码 | 需要使用应用专用密码 |
+| SendGrid | `smtp.sendgrid.net` | `587` | `apikey` | SendGrid API Key | 使用 API Key 作为密码 |
+| Mailgun | `smtp.mailgun.org` | `587` | SMTP 用户名 | SMTP 密码 | 使用 SMTP 凭证 |
+| QQ邮箱 | `smtp.qq.com` | `587` | QQ 邮箱地址 | 授权码 | 需要开启 SMTP 服务 |
+| 163邮箱 | `smtp.163.com` | `465` | 163 邮箱地址 | 授权码 | 使用授权码作为密码 |
+
+**Resend 配置步骤：**
+
+1. 访问 [Resend 官网](https://resend.com/) 注册账号
+2. 在 Resend 控制台创建 API Key
+3. 使用以下配置：
+   - `mail__transport=SMTP`
+   - `mail__options__host=smtp.resend.com`
+   - `mail__options__port=587`
+   - `mail__options__auth__user=resend`
+   - `mail__options__auth__pass=你的 Resend API Key`
+   - `mail__from=noreply@resend.dev`（使用 Resend 提供的测试域名，无需验证）
+
+> **重要提示**：如果不配置邮件服务，Ghost 仍可正常运行，但无法发送欢迎邮件、密码重置邮件等。建议在生产环境中配置邮件服务。
+
 ##### FILEBASE_BACKUP_PATH 使用说明
 
 `FILEBASE_BACKUP_PATH` 允许您指定备份在存储桶中的目录路径，这对于以下场景非常有用：
@@ -113,6 +151,26 @@ docker run -d \
   -e BACKUP_ENCRYPTION_PASSWORD=your-encryption-password \
   -e FILEBASE_BACKUP_PATH=my-backup \
   ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+
+# 完整配置示例（包含 Resend 邮件服务）
+docker run -d \
+  --name ghost-blog \
+  -p 2368:2368 \
+  -e url=http://localhost:2368 \
+  -e NODE_ENV=production \
+  -e FILEBASE_BUCKET=my-bucket-name \
+  -e FILEBASE_ENDPOINT=https://s3.filebase.com \
+  -e FILEBASE_ACCESS_KEY_ID=your-filebase-access-key-id \
+  -e FILEBASE_SECRET_ACCESS_KEY=your-filebase-secret-access-key \
+  -e BACKUP_ENCRYPTION_PASSWORD=your-encryption-password \
+  -e FILEBASE_BACKUP_PATH=my-backup \
+  -e mail__transport=SMTP \
+  -e mail__options__host=smtp.resend.com \
+  -e mail__options__port=587 \
+  -e mail__options__auth__user=resend \
+  -e mail__options__auth__pass=re_xxxxxxxxxxxxx \
+  -e mail__from=noreply@resend.dev \
+  ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
 ```
 
 ### Docker Compose 示例
@@ -135,6 +193,14 @@ services:
       - BACKUP_ENCRYPTION_PASSWORD=your-encryption-password
       # 可选：指定备份目录路径
       - FILEBASE_BACKUP_PATH=my-backup
+      # 可选：邮件服务配置（解决邮件发送失败问题）
+      # Resend 配置示例（推荐）
+      - mail__transport=SMTP
+      - mail__options__host=smtp.resend.com
+      - mail__options__port=587
+      - mail__options__auth__user=resend
+      - mail__options__auth__pass=re_xxxxxxxxxxxxx
+      - mail__from=noreply@resend.dev
     volumes:
       - ghost-data:/var/lib/ghost/content
 ```
@@ -268,6 +334,49 @@ ghost-ipfs-bkup/
 2. 手动解密数据库文件
 3. 替换容器中的数据库文件
 4. 重启容器
+
+### 邮件发送失败
+
+如果日志中出现 `Failed to send email` 或 `Missing mail.from config` 错误，说明邮件服务未正确配置。
+
+**检查步骤：**
+
+1. **验证环境变量是否正确设置**
+   ```bash
+   docker exec ghost-blog env | grep mail
+   ```
+   应该能看到所有 `mail__` 开头的环境变量。
+
+2. **检查邮件配置格式**
+   - 确保使用双下划线（`__`）作为分隔符，而不是单下划线
+   - 正确格式：`mail__transport`、`mail__options__host`
+   - 错误格式：`mail_transport`、`mail.options.host`
+
+3. **验证 SMTP 凭证**
+   - **Resend**：使用 `resend` 作为用户名，API Key 作为密码。`mail__from` 固定使用 `noreply@resend.dev`，无需验证域名
+   - Gmail：需要使用[应用专用密码](https://support.google.com/accounts/answer/185833)，不能使用普通密码
+   - SendGrid：使用 `apikey` 作为用户名，API Key 作为密码
+   - 其他服务商：确认用户名和密码/授权码正确
+
+4. **测试邮件配置**
+   - 登录 Ghost 管理后台
+   - 进入 Settings → Email
+   - 点击 "Send a test email" 测试邮件发送
+
+5. **查看详细错误日志**
+   ```bash
+   docker logs ghost-blog | grep -i mail
+   ```
+
+**常见问题：**
+
+- **Resend 配置提示**：
+  - 用户名必须设置为 `resend`（固定值）
+  - 密码使用你的 Resend API Key（格式：`re_xxxxxxxxxxxxx`）
+  - `mail__from` 固定使用 `noreply@resend.dev`（Resend 提供的测试域名，无需验证）
+- **Gmail 连接失败**：确保已启用"允许不够安全的应用访问"，或使用应用专用密码
+- **端口被阻止**：某些网络环境可能阻止 587 端口，尝试使用 465 端口（SSL）
+- **认证失败**：检查用户名和密码是否正确，某些服务商需要使用完整的邮箱地址作为用户名
 
 ## 🤝 贡献
 
