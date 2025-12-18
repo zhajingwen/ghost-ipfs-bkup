@@ -3,7 +3,8 @@ FROM ghost:latest
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         awscli \
-        gnupg && \
+        gnupg \
+        cron && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
