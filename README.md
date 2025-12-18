@@ -217,10 +217,36 @@ docker build -t ghost-ipfs-bkup:latest .
 
 ### GitHub Actions 自动构建
 
-项目配置了 GitHub Actions 工作流，当创建 Release 时会自动构建并推送到 GHCR：
+项目配置了 GitHub Actions 工作流，支持自动构建并推送到 GitHub Container Registry (GHCR)：
 
-- 镜像地址：`ghcr.io/dmikey/ghost-ipfs-bkup:<tag>`
-- 需要配置 GitHub Personal Access Token (PAT) 作为 `GHCR_PAT` secret
+**触发条件：**
+- 创建 Release 时：自动构建并推送版本标签镜像（如 `v0.0.1`）
+- 推送到任何分支时：自动构建并推送分支名和 commit SHA 标签镜像（如 `main-abc1234`）
+- 手动触发：在 Actions 页面可以手动触发构建
+
+**镜像地址格式：**
+- Release 版本：`ghcr.io/<用户名>/ghost-ipfs-bkup:<release-tag>`（如 `ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1`）
+- 分支构建：`ghcr.io/<用户名>/ghost-ipfs-bkup:<branch-name>-<commit-sha>`（如 `ghcr.io/dmikey/ghost-ipfs-bkup:main-abc1234`）
+
+**必需配置：**
+
+1. **配置 GitHub Secret**：
+   - 访问仓库 Settings → Secrets and variables → Actions
+   - 点击 "New repository secret"
+   - 名称：`GHCR_PAT`
+   - 值：GitHub Personal Access Token（需要 `write:packages` 权限）
+
+2. **创建 Personal Access Token**：
+   - 访问 GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - 点击 "Generate new token (classic)"
+   - 勾选 `write:packages` 权限
+   - 生成并复制 token，然后添加到仓库 Secrets 中
+
+**功能特性：**
+- ✅ 使用 Docker Buildx 进行构建
+- ✅ 启用构建缓存加速后续构建
+- ✅ 自动检测 secret 配置，失败时提供清晰错误提示
+- ✅ 支持多触发条件（Release、Push、手动触发）
 
 ## 🔄 备份和恢复机制
 
