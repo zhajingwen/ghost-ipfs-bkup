@@ -21,4 +21,4 @@ script_path=/usr/local/bin/backup.sh
 (crontab -l ; echo "*/15 * * * * $script_path >> /var/log/daily-backup.log") | crontab -
 
 # start ghost
-crond && node current/index.js
+cron && node current/index.js
