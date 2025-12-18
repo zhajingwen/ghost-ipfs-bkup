@@ -22,7 +22,7 @@ services:
       # Optional: Specify backup directory path in bucket (e.g., "my-backup" or "project1/backup")
       # If not set, backups will be stored at bucket root: s3://bucket/images and s3://bucket/data
       # If set to "my-backup", backups will be at: s3://bucket/my-backup/images and s3://bucket/my-backup/data
-      - FILEBASE_BACKUP_PATH=ghost
+      - FILEBASE_BACKUP_PATH=my-backup
 
 profiles:
   compute:
