@@ -29,13 +29,23 @@ now=$(date +"%T")
 echo "starting restore.... $now"
 echo "Restore source: ${s3_uri_base}"
 
-# restore db
-aws $aws_args s3 cp "${s3_uri_base}/data" "${backup_path}/data" --recursive --exclude "*" --include "*.gpg"
-gpg --decrypt --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db.gpg" > "${backup_path}/data/ghost.db"
-rm "${backup_path}/data/ghost.db.gpg"
+# Check if backup data exists in filebase
+echo "Checking for backup data in filebase..."
+if aws $aws_args s3 ls "${s3_uri_base}/data/" 2>/dev/null | grep -q "\.gpg$"; then
+    echo "Found backup data, starting restore..."
+    
+    # restore db
+    aws $aws_args s3 cp "${s3_uri_base}/data" "${backup_path}/data" --recursive --exclude "*" --include "*.gpg"
+    gpg --decrypt --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db.gpg" > "${backup_path}/data/ghost.db"
+    rm "${backup_path}/data/ghost.db.gpg"
 
-# restore images
-aws $aws_args s3 cp "${s3_uri_base}/images" "${backup_path}/images" --recursive --exclude "*" --include "*.*"
+    # restore images
+    aws $aws_args s3 cp "${s3_uri_base}/images" "${backup_path}/images" --recursive --exclude "*" --include "*.*"
 
-now=$(date +"%T")
-echo "complete restore.... $now"
+    now=$(date +"%T")
+    echo "complete restore.... $now"
+else
+    echo "Warning: No backup data found in ${s3_uri_base}/data/, skipping restore"
+    now=$(date +"%T")
+    echo "complete restore.... $now (skipped - no backup data)"
+fi
