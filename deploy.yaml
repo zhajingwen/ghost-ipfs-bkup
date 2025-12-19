@@ -18,6 +18,7 @@ services:
       - FILEBASE_ENDPOINT=https://s3.filebase.com
       - FILEBASE_ACCESS_KEY_ID=your-filebase-access-key-id
       - FILEBASE_SECRET_ACCESS_KEY=your-filebase-secret-access-key
+      # 在终端生成强密码: openssl rand -base64 32
       - BACKUP_ENCRYPTION_PASSWORD=backup-password-for-database
       # Optional: Specify backup directory path in bucket (e.g., "my-backup" or "project1/backup")
       # If not set, backups will be stored at bucket root: s3://bucket/images and s3://bucket/data
