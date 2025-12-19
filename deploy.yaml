@@ -42,17 +42,17 @@ profiles:
     ghost:
       resources:
         cpu:
-          units: 1.0
+          units: 0.5
         memory:
-          size: 1Gi
+          size: 512Mi
         storage:
-          size: 5Gi
+          size: 1.5Gi
   placement:
     akash:
       pricing:
         ghost:
           denom: uakt
-          amount: 10000
+          amount: 5000
 
 deployment:
   ghost:
