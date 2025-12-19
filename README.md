@@ -425,14 +425,4 @@ ghost-ipfs-bkup/
 - [AWS CLI 文档](https://docs.aws.amazon.com/cli/)
 - [Akash 网络文档](https://docs.akash.network/)
 
-## 📝 更新日志
-
-### v0.0.1
-- 初始版本
-- 基于 Ghost latest
-- 实现自动备份和恢复功能
-- 支持 S3 兼容存储
-
----
-
 **注意**：本项目仍在开发中，建议在生产环境使用前进行充分测试。
