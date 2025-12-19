@@ -97,6 +97,8 @@ Ghost 支持通过环境变量配置邮件服务。**注意**：Ghost 使用双�
    - `mail__transport=SMTP`
    - `mail__options__host=smtp.resend.com`
    - `mail__options__port=587`
+   - `mail__options__secure=false`
+   - `mail__options__requireTLS=true`
    - `mail__options__auth__user=resend`
    - `mail__options__auth__pass=你的 Resend API Key`
    - `mail__from=noreply@resend.dev`（使用 Resend 提供的测试域名，无需验证）
@@ -167,6 +169,8 @@ docker run -d \
   -e mail__transport=SMTP \
   -e mail__options__host=smtp.resend.com \
   -e mail__options__port=587 \
+  -e mail__options__secure=false \
+  -e mail__options__requireTLS=true \
   -e mail__options__auth__user=resend \
   -e mail__options__auth__pass=re_xxxxxxxxxxxxx \
   -e mail__from=noreply@resend.dev \
@@ -198,6 +202,8 @@ services:
       - mail__transport=SMTP
       - mail__options__host=smtp.resend.com
       - mail__options__port=587
+      - mail__options__secure=false
+      - mail__options__requireTLS=true
       - mail__options__auth__user=resend
       - mail__options__auth__pass=re_xxxxxxxxxxxxx
       - mail__from=noreply@resend.dev
