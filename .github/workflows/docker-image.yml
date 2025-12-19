@@ -11,25 +11,56 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v2
-      - name: Prepare Release Variables
-        id: vars
-        uses: ignite/cli/actions/release/vars@main
-      - name: build
-        run: |
-          echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker build . --tag ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag_name }}
-          docker push ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag_name }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
       - name: Save image information
         run: |
-          IMAGE_NAME="ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag_name }}"
+          IMAGE_TAGS="${{ steps.meta.outputs.tags }}"
           BUILD_DATE=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
           
           cat > image-info.json << EOF
           {
-            "image": "${IMAGE_NAME}",
-            "tag": "${{ steps.vars.outputs.tag_name }}",
+            "images": $(echo "$IMAGE_TAGS" | jq -R -s -c 'split("\n") | map(select(length > 0))'),
+            "primary_tag": "$(echo "$IMAGE_TAGS" | head -n 1)",
             "repository": "${{ github.repository }}",
             "build_date": "${BUILD_DATE}",
             "git_sha": "${{ github.sha }}",
@@ -37,9 +68,13 @@ jobs:
             "workflow_run": "${{ github.run_id }}"
           }
           EOF
+          
+          echo "📦 Built and pushed images:"
+          echo "$IMAGE_TAGS"
+      
       - name: Upload image information
         uses: actions/upload-artifact@v4
         with:
-          name: image-info-${{ steps.vars.outputs.tag_name }}
+          name: image-info-${{ github.sha }}
           path: image-info.json
           retention-days: 90
