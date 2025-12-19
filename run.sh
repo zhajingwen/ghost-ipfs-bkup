@@ -26,7 +26,7 @@ FILEBASE_SECRET_ACCESS_KEY=${FILEBASE_SECRET_ACCESS_KEY}
 BACKUP_ENCRYPTION_PASSWORD=${BACKUP_ENCRYPTION_PASSWORD}
 FILEBASE_BACKUP_PATH=${FILEBASE_BACKUP_PATH}
 GHOST_CONTENT=${GHOST_CONTENT}
-*/15 * * * * $script_path 2>&1 | tee -a /var/log/daily-backup.log > /proc/1/fd/1
+*/15 * * * * $script_path 2>&1 > /proc/1/fd/1
 EOF
 ) | crontab -
 
