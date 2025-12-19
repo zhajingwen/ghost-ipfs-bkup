@@ -136,7 +136,7 @@ docker run -d \
   -e FILEBASE_ACCESS_KEY_ID=your-filebase-access-key-id \
   -e FILEBASE_SECRET_ACCESS_KEY=your-filebase-secret-access-key \
   -e BACKUP_ENCRYPTION_PASSWORD=your-encryption-password \
-  ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+  ghcr.io/zhajingwen/ghost-ipfs-bkup:latest
 
 # 使用自定义备份路径（备份到指定目录）
 docker run -d \
@@ -150,7 +150,7 @@ docker run -d \
   -e FILEBASE_SECRET_ACCESS_KEY=your-filebase-secret-access-key \
   -e BACKUP_ENCRYPTION_PASSWORD=your-encryption-password \
   -e FILEBASE_BACKUP_PATH=my-backup \
-  ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+  ghcr.io/zhajingwen/ghost-ipfs-bkup:latest
 
 # 完整配置示例（包含 Resend 邮件服务）
 docker run -d \
@@ -170,7 +170,7 @@ docker run -d \
   -e mail__options__auth__user=resend \
   -e mail__options__auth__pass=re_xxxxxxxxxxxxx \
   -e mail__from=noreply@resend.dev \
-  ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+  ghcr.io/zhajingwen/ghost-ipfs-bkup:latest
 ```
 
 ### Docker Compose 示例
@@ -180,7 +180,7 @@ version: '3.8'
 
 services:
   ghost:
-    image: ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+    image: ghcr.io/zhajingwen/ghost-ipfs-bkup:latest
     ports:
       - "2368:2368"
     environment:
@@ -225,8 +225,8 @@ docker build -t ghost-ipfs-bkup:latest .
 - 手动触发：在 Actions 页面可以手动触发构建
 
 **镜像地址格式：**
-- Release 版本：`ghcr.io/<用户名>/ghost-ipfs-bkup:<release-tag>`（如 `ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1`）
-- 分支构建：`ghcr.io/<用户名>/ghost-ipfs-bkup:<branch-name>-<commit-sha>`（如 `ghcr.io/dmikey/ghost-ipfs-bkup:main-abc1234`）
+- Release 版本：`ghcr.io/<用户名>/ghost-ipfs-bkup:<release-tag>`（如 `ghcr.io/zhajingwen/ghost-ipfs-bkup:latest`）
+- 分支构建：`ghcr.io/<用户名>/ghost-ipfs-bkup:<branch-name>-<commit-sha>`（如 `ghcr.io/zhajingwen/ghost-ipfs-bkup:main-abc1234`）
 
 **必需配置：**
 

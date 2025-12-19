@@ -3,7 +3,7 @@ version: "2.0"
 
 services:
   ghost:
-    image: ghcr.io/dmikey/ghost-ipfs-bkup:v0.0.1
+    image: ghcr.io/zhajingwen/ghost-ipfs-bkup:latest
     expose:
       - port: 2368
         as: 80
