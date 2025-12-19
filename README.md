@@ -19,6 +19,9 @@
 - ✅ GPG 加密数据库备份
 - ✅ S3 兼容存储支持（Filebase、AWS S3 等）
 - ✅ 容器启动时自动数据恢复
+- ✅ 备份文件锁机制，防止并发执行
+- ✅ 完善的错误处理和验证机制
+- ✅ 智能恢复：自动检测备份数据是否存在
 - ✅ 支持 Akash 网络部署
 
 ## 🏗️ 技术架构
@@ -27,15 +30,20 @@
 - **Ghost**: `latest`
 - **数据库**: SQLite3 (`content/data/ghost.db`)
 
+### 默认环境变量
+- `FILEBASE_ENDPOINT`: 默认为 `https://s3.filebase.com`
+- `database__client`: 设置为 `sqlite3`
+- `database__connection__filename`: 设置为 `content/data/ghost.db`
+
 ### 核心组件
 - `aws-cli`: S3 存储操作
 - `gnupg`: 数据库加密/解密
 - `cron`: 定时备份任务
 
 ### 主要脚本
-- **run.sh**: 容器启动脚本，初始化 Ghost、执行恢复、设置定时任务
-- **backup.sh**: 备份脚本，加密并上传数据库和图片
-- **restore.sh**: 恢复脚本，从 S3 下载并解密数据
+- **run.sh**: 容器启动脚本，初始化 Ghost、执行恢复、设置定时任务（每 15 分钟）
+- **backup.sh**: 备份脚本，包含文件锁机制和错误处理，加密并上传数据库和图片到 S3
+- **restore.sh**: 恢复脚本，自动检测备份数据是否存在，从 S3 下载并解密数据
 
 ## 🚀 快速开始
 
@@ -226,13 +234,20 @@ docker build -t ghost-ipfs-bkup:latest .
 项目配置了 GitHub Actions 工作流，支持自动构建并推送到 GitHub Container Registry (GHCR)：
 
 **触发条件：**
-- 创建 Release 时：自动构建并推送版本标签镜像（如 `v0.0.1`）
-- 推送到任何分支时：自动构建并推送分支名和 commit SHA 标签镜像（如 `main-abc1234`）
+- 推送到 `main` 分支时：自动构建并推送镜像
+- 创建 Release 时：自动构建并推送版本标签镜像（支持 semver 格式）
 - 手动触发：在 Actions 页面可以手动触发构建
 
+**镜像标签策略：**
+- `latest`：默认分支（main）的最新构建
+- `main`：main 分支标签
+- `<branch>-<sha>`：分支名和 commit SHA（如 `main-abc1234`）
+- `<version>`：Release 版本标签（如 `v0.0.1`）
+- `<major>.<minor>`：主版本和次版本（如 `v0.0`）
+- `<major>`：主版本（如 `v0`）
+
 **镜像地址格式：**
-- Release 版本：`ghcr.io/<用户名>/ghost-ipfs-bkup:<release-tag>`（如 `ghcr.io/zhajingwen/ghost-ipfs-bkup:latest`）
-- 分支构建：`ghcr.io/<用户名>/ghost-ipfs-bkup:<branch-name>-<commit-sha>`（如 `ghcr.io/zhajingwen/ghost-ipfs-bkup:main-abc1234`）
+- `ghcr.io/<用户名>/ghost-ipfs-bkup:<tag>`（如 `ghcr.io/zhajingwen/ghost-ipfs-bkup:latest`）
 
 **必需配置：**
 
@@ -258,36 +273,50 @@ docker build -t ghost-ipfs-bkup:latest .
 
 ### 备份流程
 
+备份脚本包含文件锁机制，防止多个备份任务并发执行。
+
 1. **图片备份**：将 `content/images` 目录下的所有文件上传到 Filebase/S3
    - 如果设置了 `FILEBASE_BACKUP_PATH`，备份到：`s3://bucket/${FILEBASE_BACKUP_PATH}/images`
    - 如果未设置，备份到：`s3://bucket/images`
+   - 备份失败时会输出错误信息并退出
 
 2. **数据库备份**：
+   - 清理旧的加密文件（如果存在）
    - 使用 GPG 对称加密 `ghost.db` 文件
+   - 验证加密文件是否成功创建
    - 上传加密后的 `.gpg` 文件到 Filebase/S3
      - 如果设置了 `FILEBASE_BACKUP_PATH`，备份到：`s3://bucket/${FILEBASE_BACKUP_PATH}/data`
      - 如果未设置，备份到：`s3://bucket/data`
+   - 上传失败时会清理临时文件并退出
    - 删除本地临时加密文件
+   - 释放文件锁
 
 ### 恢复流程
 
 容器启动时自动执行：
 
 1. **初始化 Ghost 内容目录**
-2. **从 Filebase/S3 恢复数据**：
+2. **检查备份数据是否存在**：
+   - 检查 S3 存储中是否存在加密的数据库文件（`.gpg` 文件）
+   - 如果不存在备份数据，跳过恢复并输出警告信息
+3. **从 Filebase/S3 恢复数据**（仅在找到备份数据时执行）：
    - 根据 `FILEBASE_BACKUP_PATH` 配置从对应路径下载数据
    - 下载加密的数据库文件
+   - 验证加密文件是否成功下载
    - 使用 GPG 解密数据库
-   - 恢复图片文件
-3. **设置定时备份任务**（每 15 分钟）
-4. **启动 Ghost 服务**
+   - 验证解密后的数据库文件是否成功创建
+   - 删除临时加密文件
+   - 恢复图片文件（图片恢复失败不会阻止数据库恢复）
+4. **设置定时备份任务**（每 15 分钟）
+5. **启动 Ghost 服务**
 
-> **注意**：恢复时使用的 `FILEBASE_BACKUP_PATH` 必须与备份时设置的路径一致，否则无法找到备份文件。
+> **注意**：恢复时使用的 `FILEBASE_BACKUP_PATH` 必须与备份时设置的路径一致，否则无法找到备份文件。如果 S3 中不存在备份数据，容器仍会正常启动，但不会执行恢复操作。
 
 ### 备份时间表
 
 - **频率**：每 15 分钟自动备份一次
-- **日志**：备份日志写入 `/var/log/daily-backup.log`
+- **日志**：备份日志输出到容器标准输出（stdout），可通过 `docker logs` 命令查看
+- **并发保护**：使用文件锁机制防止多个备份任务同时执行
 
 ## 🌐 部署到 Akash 网络
 
@@ -317,15 +346,15 @@ akash deploy deploy.yaml
 
 ### 已知限制
 
-1. **错误处理**：脚本缺少完善的错误处理机制，建议在生产环境使用前添加错误检查和重试逻辑
-2. **数据覆盖风险**：容器每次启动都会执行恢复操作，可能覆盖本地数据
-3. **数据库锁定**：备份时如果数据库正在写入，可能导致备份失败
-4. **日志管理**：备份日志文件没有轮转机制，长期运行可能占用大量磁盘空间
+1. **错误处理**：脚本已包含基本的错误处理和验证机制，但建议在生产环境中添加重试逻辑和更完善的错误恢复机制
+2. **数据覆盖风险**：容器每次启动都会执行恢复操作，如果 S3 中存在备份数据，会覆盖本地数据
+3. **数据库锁定**：备份脚本使用文件锁防止并发执行，但如果数据库正在写入时备份，可能获取到不一致的数据快照
+4. **日志管理**：备份日志输出到容器标准输出，建议使用 Docker 日志驱动或日志收集工具进行管理
 
 ### 最佳实践
 
 1. **定期验证备份**：定期检查 S3 存储中的备份文件完整性
-2. **监控备份任务**：监控 `/var/log/daily-backup.log` 确保备份成功
+2. **监控备份任务**：使用 `docker logs <container-name>` 监控备份日志，确保备份成功
 3. **版本控制**：考虑为备份文件添加时间戳，支持多版本备份
 4. **资源监控**：监控容器资源使用情况，确保有足够空间
 
@@ -351,14 +380,25 @@ ghost-ipfs-bkup/
 1. 检查环境变量是否正确设置
 2. 验证 S3 凭证是否有效
 3. 检查网络连接和 S3 端点可访问性
-4. 查看日志：`docker logs <container-name>`
+4. 查看日志：`docker logs <container-name>` 或 `docker logs -f <container-name>` 实时查看
+5. 如果看到 "Backup already in progress, skipping..." 消息，说明有备份任务正在运行，这是正常现象
+6. 检查备份脚本的错误信息，常见错误包括：
+   - GPG 加密失败：检查 `BACKUP_ENCRYPTION_PASSWORD` 是否正确
+   - S3 上传失败：检查网络连接和 S3 凭证
+   - 文件权限问题：确保 Ghost 内容目录有写入权限
 
 ### 恢复失败
 
-1. 确认 Filebase/S3 中存在备份文件
+1. 确认 Filebase/S3 中存在备份文件（`.gpg` 格式的加密数据库文件）
 2. 验证 `BACKUP_ENCRYPTION_PASSWORD` 是否正确
-3. 检查容器文件系统权限
-4. 查看容器启动日志
+3. 检查 `FILEBASE_BACKUP_PATH` 是否与备份时设置的路径一致
+4. 检查容器文件系统权限
+5. 查看容器启动日志：`docker logs <container-name>`
+6. 如果看到 "No backup data found" 警告，说明 S3 中不存在备份数据，容器会正常启动但不会执行恢复
+7. 如果恢复失败，检查日志中的具体错误信息：
+   - GPG 解密失败：密码错误或加密文件损坏
+   - 下载失败：网络问题或 S3 凭证错误
+   - 文件验证失败：下载的文件不完整
 
 ### 数据库损坏
 
