@@ -34,13 +34,39 @@ echo "Checking for backup data in filebase..."
 if aws $aws_args s3 ls "${s3_uri_base}/data/" 2>/dev/null | grep -q "\.gpg$"; then
     echo "Found backup data, starting restore..."
     
-    # restore db
-    aws $aws_args s3 cp "${s3_uri_base}/data" "${backup_path}/data" --recursive --exclude "*" --include "*.gpg"
-    gpg --decrypt --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db.gpg" > "${backup_path}/data/ghost.db"
-    rm "${backup_path}/data/ghost.db.gpg"
+    # restore db - download encrypted file
+    if ! aws $aws_args s3 cp "${s3_uri_base}/data" "${backup_path}/data" --recursive --exclude "*" --include "*.gpg"; then
+        echo "Error: Failed to download encrypted database file from S3"
+        exit 1
+    fi
+    
+    # Verify encrypted file exists before decrypting
+    if [ ! -f "${backup_path}/data/ghost.db.gpg" ]; then
+        echo "Error: Encrypted database file was not downloaded"
+        exit 1
+    fi
+    
+    # Decrypt database file
+    if ! gpg --decrypt --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db.gpg" > "${backup_path}/data/ghost.db"; then
+        echo "Error: GPG decryption failed"
+        rm -f "${backup_path}/data/ghost.db.gpg"
+        exit 1
+    fi
+    
+    # Verify decrypted file was created
+    if [ ! -f "${backup_path}/data/ghost.db" ]; then
+        echo "Error: Decrypted database file was not created"
+        rm -f "${backup_path}/data/ghost.db.gpg"
+        exit 1
+    fi
+    
+    # Remove temporary encrypted file
+    rm -f "${backup_path}/data/ghost.db.gpg"
 
     # restore images
-    aws $aws_args s3 cp "${s3_uri_base}/images" "${backup_path}/images" --recursive --exclude "*" --include "*.*"
+    if ! aws $aws_args s3 cp "${s3_uri_base}/images" "${backup_path}/images" --recursive --exclude "*" --include "*.*"; then
+        echo "Warning: Failed to restore images, but database restore succeeded"
+    fi
 
     now=$(date +"%T")
     echo "complete restore.... $now"

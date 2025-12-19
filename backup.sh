@@ -26,14 +26,59 @@ aws_args="--endpoint-url ${FILEBASE_ENDPOINT}"
 backup_path=$GHOST_CONTENT
 now=$(date +"%T")
 
+# File lock mechanism to prevent concurrent execution
+LOCK_FILE="/tmp/ghost-backup.lock"
+
+# Check if lock file exists, if so exit
+if [ -f "$LOCK_FILE" ]; then
+    echo "Backup already in progress, skipping..."
+    exit 0
+fi
+
+# Create lock file and set trap to clean up on exit
+trap "rm -f $LOCK_FILE; exit" INT TERM EXIT
+touch "$LOCK_FILE"
+
 echo "starting backup.... $now"
 echo "Backup destination: ${s3_uri_base}"
 
-aws $aws_args s3 cp "${backup_path}/images" "${s3_uri_base}/images" --recursive --exclude "*" --include "*.*"
+# Backup images
+if ! aws $aws_args s3 cp "${backup_path}/images" "${s3_uri_base}/images" --recursive --exclude "*" --include "*.*"; then
+    echo "Error: Failed to backup images"
+    rm -f "$LOCK_FILE"
+    exit 1
+fi
 
-gpg --symmetric --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db"
-aws $aws_args s3 cp "${backup_path}/data/" "${s3_uri_base}/data" --recursive --exclude "*" --include "*.gpg"
-rm "${backup_path}/data/ghost.db.gpg"
+# Clean up old encrypted file before encryption
+rm -f "${backup_path}/data/ghost.db.gpg"
+
+# Encrypt database file
+if ! gpg --symmetric --batch --passphrase "$BACKUP_ENCRYPTION_PASSWORD" "${backup_path}/data/ghost.db"; then
+    echo "Error: GPG encryption failed"
+    rm -f "$LOCK_FILE"
+    exit 1
+fi
+
+# Verify encrypted file was created
+if [ ! -f "${backup_path}/data/ghost.db.gpg" ]; then
+    echo "Error: Encrypted file was not created"
+    rm -f "$LOCK_FILE"
+    exit 1
+fi
+
+# Upload encrypted database file
+if ! aws $aws_args s3 cp "${backup_path}/data/" "${s3_uri_base}/data" --recursive --exclude "*" --include "*.gpg"; then
+    echo "Error: S3 upload failed"
+    rm -f "${backup_path}/data/ghost.db.gpg"
+    rm -f "$LOCK_FILE"
+    exit 1
+fi
+
+# Remove temporary encrypted file
+rm -f "${backup_path}/data/ghost.db.gpg"
+
+# Remove lock file
+rm -f "$LOCK_FILE"
 
 now=$(date +"%T")
 echo "complete backup.... $now"
