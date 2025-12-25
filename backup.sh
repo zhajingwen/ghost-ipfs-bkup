@@ -42,6 +42,9 @@ touch "$LOCK_FILE"
 echo "starting backup.... $now"
 echo "Backup destination: ${s3_uri_base}"
 
+# 备份前去重
+node /usr/local/bin/dedup-posts.js 2>&1 || true
+
 # Backup images
 if ! aws $aws_args s3 cp "${backup_path}/images" "${s3_uri_base}/images" --recursive --exclude "*" --include "*.*"; then
     echo "Error: Failed to backup images"

@@ -14,6 +14,9 @@ done
 # run restore
 /usr/local/bin/restore.sh
 
+# 恢复后去重
+node /usr/local/bin/dedup-posts.js 2>&1 || true
+
 # Set the path to the script you want to run as a cron job
 script_path=/usr/local/bin/backup.sh
 
