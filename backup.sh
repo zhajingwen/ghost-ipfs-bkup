@@ -43,7 +43,8 @@ echo "starting backup.... $now"
 echo "Backup destination: ${s3_uri_base}"
 
 # 备份前去重
-NODE_PATH=/var/lib/ghost/node_modules node /usr/local/bin/dedup-posts.js 2>&1 || true
+# 使用完整路径调用 node，确保在 cron 环境中也能找到（cron 的 PATH 通常只有 /usr/bin:/bin）
+NODE_PATH=/var/lib/ghost/node_modules /usr/local/bin/node /usr/local/bin/dedup-posts.js 2>&1 || true
 
 # Backup images
 if ! aws $aws_args s3 cp "${backup_path}/images" "${s3_uri_base}/images" --recursive --exclude "*" --include "*.*"; then
