@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Ghost 文章去重脚本（超简化版）
- * 功能：删除标题重复的文章，保留 updated_at 最新的
+ * Ghost 文章去重和黑名单清理脚本
+ * 功能：
+ * 1. 删除黑名单中的文章（如 "Coming soon"），一个都不保留
+ * 2. 删除标题重复的文章，保留 updated_at 最新的
  */
 
 const Database = require('better-sqlite3');
@@ -10,6 +12,76 @@ const fs = require('fs');
 
 // 数据库路径
 const DB_PATH = process.env.GHOST_DB_PATH || '/var/lib/ghost/content/data/ghost.db';
+
+// 黑名单：需要完全删除的文章标题（一个都不保留）
+const BLACKLIST_TITLES = [
+  'Coming soon',
+  'About this site',
+  // 可根据需要添加其他默认文章
+];
+
+// Ghost 关联表列表（用于级联删除）
+const RELATED_TABLES = [
+  'posts_authors',
+  'posts_tags',
+  'posts_products',
+  'posts_meta',
+  'mobiledoc_revisions',
+  'post_revisions',
+  'collections_posts',
+  'email_recipients',
+  'email_batches',
+  'members_click_events',
+  'members_feedback'
+];
+
+/**
+ * 删除黑名单中的文章（不保留任何一个）
+ * @param {Database} db - SQLite 数据库实例
+ * @returns {number} - 删除的文章数量
+ */
+function deleteBlacklistedPosts(db) {
+  if (BLACKLIST_TITLES.length === 0) return 0;
+
+  let totalDeleted = 0;
+
+  BLACKLIST_TITLES.forEach(title => {
+    // 查找该标题的所有文章
+    const posts = db.prepare(
+      'SELECT id FROM posts WHERE title = ?'
+    ).all(title);
+
+    if (posts.length > 0) {
+      const idsToDelete = posts.map(p => p.id);
+      const placeholders = idsToDelete.map(() => '?').join(',');
+
+      // 1. 先删除所有关联表中的记录
+      RELATED_TABLES.forEach(table => {
+        try {
+          const stmt = db.prepare(
+            `DELETE FROM ${table} WHERE post_id IN (${placeholders})`
+          );
+          stmt.run(...idsToDelete);
+        } catch (err) {
+          // 忽略表不存在或没有 post_id 字段的错误
+          if (!err.message.includes('no such table') && !err.message.includes('no such column')) {
+            throw err;
+          }
+        }
+      });
+
+      // 2. 删除文章本身
+      const deleted = db.prepare(
+        `DELETE FROM posts WHERE id IN (${placeholders})`
+      ).run(...idsToDelete);
+
+      totalDeleted += deleted.changes;
+      console.log(`[BLACKLIST] Deleted ${deleted.changes} posts with title "${title}"`);
+    }
+  });
+
+  return totalDeleted;
+}
 
 function deduplicate() {
   // 检查数据库是否存在
@@ -30,31 +102,22 @@ function deduplicate() {
       HAVING COUNT(*) > 1
     `).all();
 
-    if (duplicates.length === 0) {
-      console.log('[INFO] No duplicate posts found');
-      return;
-    }
-
-    console.log(`[DEDUP] Found ${duplicates.length} duplicate titles`);
-
     // 在事务中执行删除
     const transaction = db.transaction(() => {
-      let totalDeleted = 0;
+      // 1. 先删除黑名单文章（一个都不保留）
+      const blacklistedDeleted = deleteBlacklistedPosts(db);
+      if (blacklistedDeleted > 0) {
+        console.log(`[BLACKLIST] Total deleted: ${blacklistedDeleted} posts`);
+      }
 
-      // Ghost 关联表列表（按依赖顺序）
-      const relatedTables = [
-        'posts_authors',
-        'posts_tags',
-        'posts_products',
-        'posts_meta',
-        'mobiledoc_revisions',
-        'post_revisions',
-        'collections_posts',
-        'email_recipients',
-        'email_batches',
-        'members_click_events',
-        'members_feedback'
-      ];
+      // 2. 再执行去重逻辑（保留最新）
+      if (duplicates.length === 0) {
+        console.log('[INFO] No duplicate posts found');
+        return;
+      }
+
+      console.log(`[DEDUP] Found ${duplicates.length} duplicate titles`);
+      let totalDeleted = 0;
 
       duplicates.forEach(({ title }) => {
         // 获取该标题的所有文章，按 updated_at 降序
@@ -69,7 +132,7 @@ function deduplicate() {
           const placeholders = idsToDelete.map(() => '?').join(',');
 
           // 1. 先删除所有关联表中的记录
-          relatedTables.forEach(table => {
+          RELATED_TABLES.forEach(table => {
             try {
               const stmt = db.prepare(
                 `DELETE FROM ${table} WHERE post_id IN (${placeholders})`
