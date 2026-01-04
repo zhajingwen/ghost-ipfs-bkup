@@ -28,6 +28,8 @@ Docker image based on Ghost latest, providing automatic backup and restore funct
 - ✅ Backup file lock mechanism to prevent concurrent execution
 - ✅ Comprehensive error handling and validation
 - ✅ Smart restore: Automatically detects if backup data exists
+- ✅ **Automatic deduplication**: Removes duplicate posts and blacklisted articles
+- ✅ Multi-stage Docker build for optimized image size (~280MB smaller)
 - ✅ Akash network deployment support
 
 ## 🏗️ Technical Architecture
@@ -42,14 +44,16 @@ Docker image based on Ghost latest, providing automatic backup and restore funct
 - `database__connection__filename`: Set to `content/data/ghost.db`
 
 ### Core Components
-- `aws-cli`: S3 storage operations
+- `s3cmd`: S3 storage operations (lightweight alternative to aws-cli)
 - `gnupg`: Database encryption/decryption
 - `cron`: Scheduled backup tasks
+- `better-sqlite3`: Direct SQLite database manipulation for deduplication
 
 ### Main Scripts
-- **run.sh**: Container startup script, initializes Ghost, executes restore, sets up scheduled tasks (every 15 minutes)
-- **backup.sh**: Backup script with file lock mechanism and error handling, encrypts and uploads database and images to S3
+- **run.sh**: Container startup script, initializes Ghost, executes restore, runs deduplication, sets up scheduled tasks (every 15 minutes)
+- **backup.sh**: Backup script with file lock mechanism and error handling, runs deduplication before backup, encrypts and uploads database and images to S3
 - **restore.sh**: Restore script, automatically detects if backup data exists, downloads and decrypts data from S3
+- **scripts/dedup-posts.js**: Deduplication script that removes blacklisted posts and duplicate titles, keeping only the latest version
 
 ## 🚀 Quick Start
 
@@ -229,6 +233,10 @@ services:
 
 ### Local Build
 
+The project uses a multi-stage Docker build to optimize image size (~280MB smaller):
+- **Stage 1 (Builder)**: Compiles `better-sqlite3` with native dependencies
+- **Stage 2 (Runtime)**: Minimal runtime image with only necessary components
+
 ```bash
 git clone https://github.com/dmikey/ghost-ipfs-bkup.git
 cd ghost-ipfs-bkup
@@ -276,17 +284,7 @@ The project is configured with GitHub Actions workflow supporting automatic buil
 
 **Required Configuration:**
 
-1. **Configure GitHub Secret**:
-   - Visit repository Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   - Name: `GHCR_PAT`
-   - Value: GitHub Personal Access Token (requires `write:packages` permission)
-
-2. **Create Personal Access Token**:
-   - Visit GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
-   - Click "Generate new token (classic)"
-   - Check `write:packages` permission
-   - Generate and copy token, then add to repository Secrets
+The workflow now uses the built-in `GITHUB_TOKEN` automatically provided by GitHub Actions, eliminating the need for manual token configuration. No additional setup is required for automatic builds.
 
 **Features:**
 - ✅ Uses Docker Buildx for building
@@ -300,12 +298,18 @@ The project is configured with GitHub Actions workflow supporting automatic buil
 
 The backup script includes a file lock mechanism to prevent concurrent backup task execution.
 
-1. **Image Backup**: Uploads all files in the `content/images` directory to Filebase/S3
+1. **Pre-Backup Deduplication**:
+   - Automatically runs deduplication script before backup
+   - Removes all blacklisted posts (e.g., "Coming soon", "About this site")
+   - Deletes duplicate posts with same title, keeping only the latest version (based on `updated_at`)
+   - Uses transaction to ensure data consistency
+
+2. **Image Backup**: Uploads all files in the `content/images` directory to Filebase/S3
    - If `FILEBASE_BACKUP_PATH` is set, backs up to: `s3://bucket/${FILEBASE_BACKUP_PATH}/images`
    - If not set, backs up to: `s3://bucket/images`
    - Outputs error message and exits on backup failure
 
-2. **Database Backup**:
+3. **Database Backup**:
    - Cleans up old encrypted files (if any)
    - Uses GPG symmetric encryption on `ghost.db` file
    - Verifies encrypted file was created successfully
@@ -332,8 +336,12 @@ Automatically executed on container startup:
    - Verifies decrypted database file was created successfully
    - Deletes temporary encrypted file
    - Restores image files (image restore failure won't block database restore)
-4. **Set scheduled backup task** (every 15 minutes)
-5. **Start Ghost service**
+4. **Post-Restore Deduplication**:
+   - Runs deduplication script after restore
+   - Removes duplicate posts and blacklisted articles
+   - Ensures clean database state before Ghost starts
+5. **Set scheduled backup task** (every 15 minutes)
+6. **Start Ghost service**
 
 > **Note**: The `FILEBASE_BACKUP_PATH` used during restore must match the path set during backup, otherwise backup files cannot be found. If backup data doesn't exist in S3, the container will still start normally but won't execute restore operations.
 
@@ -387,11 +395,15 @@ Before deployment, modify the following in `deploy.yaml`:
 
 ```
 ghost-ipfs-bkup/
-├── Dockerfile              # Docker image build file
-├── backup.sh              # Backup script
+├── Dockerfile              # Multi-stage Docker build file (optimized for size)
+├── backup.sh              # Backup script (includes pre-backup deduplication)
 ├── restore.sh             # Restore script
-├── run.sh                 # Startup script
+├── run.sh                 # Startup script (includes post-restore deduplication)
 ├── deploy.yaml            # Akash deployment configuration
+├── scripts/
+│   └── dedup-posts.js     # Post deduplication and blacklist cleanup script
+├── test-dedup.sh          # Manual deduplication testing script
+├── TEST-DEDUP.md          # Deduplication testing documentation
 ├── .github/
 │   └── workflows/
 │       └── docker-image.yml  # GitHub Actions CI/CD
@@ -431,6 +443,42 @@ ghost-ipfs-bkup/
 2. Manually decrypt database file
 3. Replace database file in container
 4. Restart container
+
+### Deduplication Issues
+
+If you encounter issues with the deduplication script:
+
+1. **Check Node.js availability**
+   ```bash
+   docker exec <container-name> which node
+   docker exec <container-name> node --version
+   ```
+
+2. **Check better-sqlite3 installation**
+   ```bash
+   docker exec <container-name> ls -la /var/lib/ghost/node_modules/better-sqlite3
+   ```
+
+3. **Manually run deduplication**
+   ```bash
+   docker exec <container-name> NODE_PATH=/var/lib/ghost/node_modules node /usr/local/bin/dedup-posts.js
+   ```
+
+4. **View deduplication logs**
+   ```bash
+   docker logs <container-name> | grep -E '\[DEDUP\]|\[BLACKLIST\]'
+   ```
+
+**Expected output:**
+```
+[BLACKLIST] Deleted X posts with title "Coming soon"
+[DEDUP] Found X duplicate titles
+[DEDUP] "Article Title": deleted X old version(s)
+[DEDUP] Total deleted: X posts
+```
+
+**Customize blacklist:**
+Edit `/usr/local/bin/dedup-posts.js` and modify the `BLACKLIST_TITLES` array to add or remove blacklisted article titles.
 
 ### Email Sending Failure
 
@@ -518,6 +566,8 @@ This project is built on the official Ghost image; please follow the respective 
 - ✅ 备份文件锁机制，防止并发执行
 - ✅ 完善的错误处理和验证机制
 - ✅ 智能恢复：自动检测备份数据是否存在
+- ✅ **自动去重**：删除重复文章和黑名单文章
+- ✅ 多阶段 Docker 构建优化镜像大小（减小约 280MB）
 - ✅ 支持 Akash 网络部署
 
 ## 🏗️ 技术架构
@@ -532,14 +582,16 @@ This project is built on the official Ghost image; please follow the respective 
 - `database__connection__filename`: 设置为 `content/data/ghost.db`
 
 ### 核心组件
-- `aws-cli`: S3 存储操作
+- `s3cmd`: S3 存储操作（轻量级 aws-cli 替代方案）
 - `gnupg`: 数据库加密/解密
 - `cron`: 定时备份任务
+- `better-sqlite3`: SQLite 数据库直接操作，用于去重功能
 
 ### 主要脚本
-- **run.sh**: 容器启动脚本，初始化 Ghost、执行恢复、设置定时任务(每 15 分钟)
-- **backup.sh**: 备份脚本，包含文件锁机制和错误处理，加密并上传数据库和图片到 S3
+- **run.sh**: 容器启动脚本，初始化 Ghost、执行恢复、运行去重、设置定时任务(每 15 分钟)
+- **backup.sh**: 备份脚本，包含文件锁机制和错误处理，备份前运行去重，加密并上传数据库和图片到 S3
 - **restore.sh**: 恢复脚本，自动检测备份数据是否存在，从 S3 下载并解密数据
+- **scripts/dedup-posts.js**: 去重脚本，删除黑名单文章和重复标题文章，仅保留最新版本
 
 ## 🚀 快速开始
 
@@ -719,6 +771,10 @@ services:
 
 ### 本地构建
 
+本项目使用多阶段 Docker 构建来优化镜像大小（减小约 280MB）：
+- **阶段 1（构建器）**：编译 `better-sqlite3` 及其原生依赖
+- **阶段 2（运行时）**：仅包含必要组件的最小运行时镜像
+
 ```bash
 git clone https://github.com/dmikey/ghost-ipfs-bkup.git
 cd ghost-ipfs-bkup
@@ -766,17 +822,7 @@ WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive da
 
 **必需配置：**
 
-1. **配置 GitHub Secret**：
-   - 访问仓库 Settings → Secrets and variables → Actions
-   - 点击 "New repository secret"
-   - 名称：`GHCR_PAT`
-   - 值：GitHub Personal Access Token(需要 `write:packages` 权限)
-
-2. **创建 Personal Access Token**：
-   - 访问 GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
-   - 点击 "Generate new token (classic)"
-   - 勾选 `write:packages` 权限
-   - 生成并复制 token，然后添加到仓库 Secrets 中
+工作流现在使用 GitHub Actions 自动提供的内置 `GITHUB_TOKEN`，无需手动配置 token。自动构建无需额外设置。
 
 **功能特性：**
 - ✅ 使用 Docker Buildx 进行构建
@@ -790,12 +836,18 @@ WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive da
 
 备份脚本包含文件锁机制，防止多个备份任务并发执行。
 
-1. **图片备份**：将 `content/images` 目录下的所有文件上传到 Filebase/S3
+1. **备份前去重**：
+   - 备份前自动运行去重脚本
+   - 删除所有黑名单文章（如 "Coming soon"、"About this site"）
+   - 删除标题重复的文章，仅保留最新版本（基于 `updated_at` 字段）
+   - 使用事务确保数据一致性
+
+2. **图片备份**：将 `content/images` 目录下的所有文件上传到 Filebase/S3
    - 如果设置了 `FILEBASE_BACKUP_PATH`，备份到：`s3://bucket/${FILEBASE_BACKUP_PATH}/images`
    - 如果未设置，备份到：`s3://bucket/images`
    - 备份失败时会输出错误信息并退出
 
-2. **数据库备份**：
+3. **数据库备份**：
    - 清理旧的加密文件(如果存在)
    - 使用 GPG 对称加密 `ghost.db` 文件
    - 验证加密文件是否成功创建
@@ -822,8 +874,12 @@ WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive da
    - 验证解密后的数据库文件是否成功创建
    - 删除临时加密文件
    - 恢复图片文件(图片恢复失败不会阻止数据库恢复)
-4. **设置定时备份任务**(每 15 分钟)
-5. **启动 Ghost 服务**
+4. **恢复后去重**：
+   - 恢复后运行去重脚本
+   - 删除重复文章和黑名单文章
+   - 确保 Ghost 启动前数据库状态干净
+5. **设置定时备份任务**(每 15 分钟)
+6. **启动 Ghost 服务**
 
 > **注意**：恢复时使用的 `FILEBASE_BACKUP_PATH` 必须与备份时设置的路径一致，否则无法找到备份文件。如果 S3 中不存在备份数据，容器仍会正常启动，但不会执行恢复操作。
 
@@ -877,11 +933,15 @@ akash deploy deploy.yaml
 
 ```
 ghost-ipfs-bkup/
-├── Dockerfile              # Docker 镜像构建文件
-├── backup.sh              # 备份脚本
+├── Dockerfile              # 多阶段 Docker 构建文件（镜像大小优化）
+├── backup.sh              # 备份脚本（包含备份前去重）
 ├── restore.sh             # 恢复脚本
-├── run.sh                 # 启动脚本
+├── run.sh                 # 启动脚本（包含恢复后去重）
 ├── deploy.yaml            # Akash 部署配置
+├── scripts/
+│   └── dedup-posts.js     # 文章去重和黑名单清理脚本
+├── test-dedup.sh          # 去重功能手动测试脚本
+├── TEST-DEDUP.md          # 去重功能测试文档
 ├── .github/
 │   └── workflows/
 │       └── docker-image.yml  # GitHub Actions CI/CD
@@ -921,6 +981,42 @@ ghost-ipfs-bkup/
 2. 手动解密数据库文件
 3. 替换容器中的数据库文件
 4. 重启容器
+
+### 去重功能问题
+
+如果遇到去重脚本问题：
+
+1. **检查 Node.js 可用性**
+   ```bash
+   docker exec <container-name> which node
+   docker exec <container-name> node --version
+   ```
+
+2. **检查 better-sqlite3 安装**
+   ```bash
+   docker exec <container-name> ls -la /var/lib/ghost/node_modules/better-sqlite3
+   ```
+
+3. **手动运行去重**
+   ```bash
+   docker exec <container-name> NODE_PATH=/var/lib/ghost/node_modules node /usr/local/bin/dedup-posts.js
+   ```
+
+4. **查看去重日志**
+   ```bash
+   docker logs <container-name> | grep -E '\[DEDUP\]|\[BLACKLIST\]'
+   ```
+
+**预期输出：**
+```
+[BLACKLIST] Deleted X posts with title "Coming soon"
+[DEDUP] Found X duplicate titles
+[DEDUP] "文章标题": deleted X old version(s)
+[DEDUP] Total deleted: X posts
+```
+
+**自定义黑名单：**
+编辑 `/usr/local/bin/dedup-posts.js` 文件，修改 `BLACKLIST_TITLES` 数组来添加或删除需要清理的文章标题。
 
 ### 邮件发送失败
 
