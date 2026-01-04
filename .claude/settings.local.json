@@ -4,7 +4,12 @@
       "Bash(xargs ls:*)",
       "Bash(grep:*)",
       "Bash(git log:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/test/Downloads/ghost-ipfs-bkup log --oneline --all)",
+      "Bash(docker images:*)",
+      "Bash(docker build:*)",
+      "Bash(docker run:*)"
     ]
   }
 }

@@ -1,0 +1,6 @@
+.git
+.github
+*.md
+deploy.yaml
+.DS_Store
+node_modules

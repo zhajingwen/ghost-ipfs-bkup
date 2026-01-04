@@ -9,9 +9,23 @@ BACKUP_ENCRYPTION_PASSWORD="${BACKUP_ENCRYPTION_PASSWORD:-${KEY_PASSWORD}}"
 # Example: "my-backup" will backup to s3://bucket/my-backup/images and s3://bucket/my-backup/data
 FILEBASE_BACKUP_PATH="${FILEBASE_BACKUP_PATH:-}"
 
-# Export AWS credentials for AWS CLI
-export AWS_ACCESS_KEY_ID="${FILEBASE_ACCESS_KEY_ID}"
-export AWS_SECRET_ACCESS_KEY="${FILEBASE_SECRET_ACCESS_KEY}"
+# ============================================================
+# s3cmd 配置生成
+# ============================================================
+# 移除协议前缀 (s3cmd 不需要 https://)
+S3_HOST_CLEAN="${FILEBASE_ENDPOINT#https://}"
+S3_HOST_CLEAN="${S3_HOST_CLEAN#http://}"
+
+cat > ~/.s3cfg <<EOF
+[default]
+access_key = ${FILEBASE_ACCESS_KEY_ID}
+secret_key = ${FILEBASE_SECRET_ACCESS_KEY}
+host_base = ${S3_HOST_CLEAN}
+host_bucket = %(bucket)s.${S3_HOST_CLEAN}
+use_https = True
+check_ssl_certificate = True
+check_ssl_hostname = True
+EOF
 
 # Build S3 base URI with optional backup path prefix
 if [ -n "$FILEBASE_BACKUP_PATH" ]; then
@@ -22,7 +36,6 @@ else
   s3_uri_base="s3://${FILEBASE_BUCKET}"
 fi
 
-aws_args="--endpoint-url ${FILEBASE_ENDPOINT}"
 backup_path=$GHOST_CONTENT
 now=$(date +"%T")
 
@@ -46,8 +59,13 @@ echo "Backup destination: ${s3_uri_base}"
 # 使用完整路径调用 node，确保在 cron 环境中也能找到（cron 的 PATH 通常只有 /usr/bin:/bin）
 NODE_PATH=/var/lib/ghost/node_modules /usr/local/bin/node /usr/local/bin/dedup-posts.js 2>&1 || true
 
-# Backup images
-if ! aws $aws_args s3 cp "${backup_path}/images" "${s3_uri_base}/images" --recursive --exclude "*" --include "*.*"; then
+# Backup images using s3cmd
+if ! s3cmd sync \
+    --exclude '*' \
+    --include '*.*' \
+    --delete-removed \
+    "${backup_path}/images/" \
+    "${s3_uri_base}/images/"; then
     echo "Error: Failed to backup images"
     rm -f "$LOCK_FILE"
     exit 1
@@ -70,8 +88,10 @@ if [ ! -f "${backup_path}/data/ghost.db.gpg" ]; then
     exit 1
 fi
 
-# Upload encrypted database file
-if ! aws $aws_args s3 cp "${backup_path}/data/" "${s3_uri_base}/data" --recursive --exclude "*" --include "*.gpg"; then
+# Upload encrypted database file using s3cmd
+if ! s3cmd put \
+    "${backup_path}/data/ghost.db.gpg" \
+    "${s3_uri_base}/data/ghost.db.gpg"; then
     echo "Error: S3 upload failed"
     rm -f "${backup_path}/data/ghost.db.gpg"
     rm -f "$LOCK_FILE"
