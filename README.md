@@ -235,6 +235,25 @@ cd ghost-ipfs-bkup
 docker build -t ghost-ipfs-bkup:latest .
 ```
 
+#### Build Warnings
+
+When building the image, you may see the following warnings:
+
+```
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "FILEBASE_ACCESS_KEY_ID")
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "FILEBASE_SECRET_ACCESS_KEY")
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "BACKUP_ENCRYPTION_PASSWORD")
+```
+
+**These warnings are safe to ignore.** Here's why:
+
+- ✅ **Pattern-based detection**: Docker BuildKit triggers these warnings based on variable names containing keywords like `KEY`, `SECRET`, or `PASSWORD`
+- ✅ **No actual secrets**: The Dockerfile only declares empty environment variables, not actual secret values
+- ✅ **Runtime injection**: Real credentials are passed at runtime via `docker run -e` and are never written to the image layers
+- ✅ **Best practice**: This approach follows Docker security best practices by separating configuration from the image
+
+The warnings are a precautionary measure by Docker to prevent hardcoded secrets in Dockerfiles. Since we're only declaring variable names (with empty values) and injecting actual secrets at runtime, there's no security risk.
+
 ### GitHub Actions Automatic Build
 
 The project is configured with GitHub Actions workflow supporting automatic builds and pushes to GitHub Container Registry (GHCR):
@@ -705,6 +724,25 @@ git clone https://github.com/dmikey/ghost-ipfs-bkup.git
 cd ghost-ipfs-bkup
 docker build -t ghost-ipfs-bkup:latest .
 ```
+
+#### 构建警告说明
+
+构建镜像时，你可能会看到以下警告：
+
+```
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "FILEBASE_ACCESS_KEY_ID")
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "FILEBASE_SECRET_ACCESS_KEY")
+WARN: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "BACKUP_ENCRYPTION_PASSWORD")
+```
+
+**这些警告可以安全忽略。** 原因如下：
+
+- ✅ **基于模式的检测**：Docker BuildKit 根据变量名中包含的关键词（如 `KEY`、`SECRET`、`PASSWORD`）触发警告
+- ✅ **不包含真实密钥**：Dockerfile 中只声明了空的环境变量，而非实际的密钥值
+- ✅ **运行时注入**：真实凭证通过 `docker run -e` 在运行时传入，永远不会写入镜像层
+- ✅ **最佳实践**：这种方式遵循 Docker 安全最佳实践，将配置与镜像分离
+
+这些警告是 Docker 为防止在 Dockerfile 中硬编码密钥的预防措施。由于我们只是声明变量名（空值），并在运行时注入实际密钥，因此不存在安全风险。
 
 ### GitHub Actions 自动构建
 

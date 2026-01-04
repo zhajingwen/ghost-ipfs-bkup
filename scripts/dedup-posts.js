@@ -41,6 +41,21 @@ function deduplicate() {
     const transaction = db.transaction(() => {
       let totalDeleted = 0;
 
+      // Ghost 关联表列表（按依赖顺序）
+      const relatedTables = [
+        'posts_authors',
+        'posts_tags',
+        'posts_products',
+        'posts_meta',
+        'mobiledoc_revisions',
+        'post_revisions',
+        'collections_posts',
+        'email_recipients',
+        'email_batches',
+        'members_click_events',
+        'members_feedback'
+      ];
+
       duplicates.forEach(({ title }) => {
         // 获取该标题的所有文章，按 updated_at 降序
         const posts = db.prepare(
@@ -52,6 +67,26 @@ function deduplicate() {
 
         if (idsToDelete.length > 0) {
           const placeholders = idsToDelete.map(() => '?').join(',');
+
+          // 1. 先删除所有关联表中的记录
+          relatedTables.forEach(table => {
+            try {
+              const stmt = db.prepare(
+                `DELETE FROM ${table} WHERE post_id IN (${placeholders})`
+              );
+              const result = stmt.run(...idsToDelete);
+              if (result.changes > 0) {
+                console.log(`[DEDUP]   - Deleted ${result.changes} records from ${table}`);
+              }
+            } catch (err) {
+              // 忽略表不存在或没有 post_id 字段的错误
+              if (!err.message.includes('no such table') && !err.message.includes('no such column')) {
+                throw err;
+              }
+            }
+          });
+
+          // 2. 最后删除文章本身
           const deleted = db.prepare(
             `DELETE FROM posts WHERE id IN (${placeholders})`
           ).run(...idsToDelete);
